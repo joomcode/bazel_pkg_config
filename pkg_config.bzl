@@ -92,7 +92,6 @@ def _symlinks(ctx, basename, srcpaths):
     base = root.get_child(basename)
     rootlen = len(str(base)) - len(basename)
     for idx, src in enumerate([ctx.path(p) for p in srcpaths]):
-        print("\nBase: ", base, base.get_child(src.basename))
         dest = "{}_{}".format(base.get_child(src.basename), idx)
         ctx.symlink(src, dest)
         result += [str(dest)[rootlen:]]
