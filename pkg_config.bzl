@@ -135,6 +135,7 @@ def _pkg_config_impl(ctx):
     if includes.error != None:
         return includes
     includes = includes.value
+    print("Includes: ", includes)
     includes = _symlinks(ctx, "includes", includes)
     strip_include = "includes"
     if len(includes) == 1:
