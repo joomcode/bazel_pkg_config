@@ -91,8 +91,9 @@ def _symlinks(ctx, basename, srcpaths):
     root = ctx.path("")
     base = root.get_child(basename)
     rootlen = len(str(base)) - len(basename)
-    for src in [ctx.path(p) for p in srcpaths]:
-        dest = base.get_child(src.basename)
+    for idx, src in enumerate([ctx.path(p) for p in srcpaths]):
+        print("\nBase: ", base, base.get_child(src.basename))
+        dest = "{}_{}".format(base.get_child(src.basename), idx)
         ctx.symlink(src, dest)
         result += [str(dest)[rootlen:]]
     return result
@@ -135,7 +136,6 @@ def _pkg_config_impl(ctx):
     if includes.error != None:
         return includes
     includes = includes.value
-    print("Includes: ", includes)
     includes = _symlinks(ctx, "includes", includes)
     strip_include = "includes"
     if len(includes) == 1:
