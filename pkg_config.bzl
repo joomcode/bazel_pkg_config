@@ -69,15 +69,18 @@ def _copts(ctx, pkg_config, pkg_name):
     return _split(_pkg_config(ctx, pkg_config, pkg_name, [
         "--cflags-only-other",
         "--libs-only-L",
-        "--static",
-    ]))
+    ] + _pkg_config_static(ctx)))
+
+def _pkg_config_static(ctx):
+    if ctx.attr.dynamic:
+        return []
+    return ["--static"]
 
 def _linkopts(ctx, pkg_config, pkg_name):
     return _split(_pkg_config(ctx, pkg_config, pkg_name, [
         "--libs-only-other",
         "--libs-only-l",
-        "--static",
-    ]))
+    ] + _pkg_config_static(ctx)))
 
 def _ignore_opts(opts, ignore_opts):
     remain = []
@@ -92,16 +95,17 @@ def _symlinks(ctx, basename, srcpaths):
     base = root.get_child(basename)
     rootlen = len(str(base)) - len(basename)
     for idx, src in enumerate([ctx.path(p) for p in srcpaths]):
+        if not src.exists:
+            continue
         dest = "{}_{}".format(base.get_child(src.basename), idx)
-        ctx.symlink(src, dest)
+        ctx.symlink(src.realpath, dest)
         result += [str(dest)[rootlen:]]
     return result
 
 def _deps(ctx, pkg_config, pkg_name):
     deps = _split(_pkg_config(ctx, pkg_config, pkg_name, [
         "--libs-only-L",
-        "--static",
-    ]))
+    ] + _pkg_config_static(ctx)))
     if deps.error != None:
         return deps
     deps, unused = _extract_prefix(deps.value, "-L", strip = True)
@@ -188,6 +192,7 @@ pkg_config = repository_rule(
         "linkopts": attr.string_list(doc = "Extra linkopts value."),
         "copts": attr.string_list(doc = "Extra copts value."),
         "ignore_opts": attr.string_list(doc = "Ignore listed opts in copts or linkopts."),
+        "dynamic": attr.bool(doc = "Use dynamic linking."),
     },
     local = True,
     implementation = _pkg_config_impl,
