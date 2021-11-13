@@ -7,7 +7,13 @@ def _error(message):
 def _split(result, delimeter = " "):
     if result.error != None:
         return result
-    return _success([arg for arg in result.value.strip().split(delimeter) if arg])
+    l = []
+    m = {}
+    for arg in result.value.strip().split(delimeter):
+      if arg and (not arg in m):
+        m[arg] = True
+        l += [arg]
+    return _success(l)
 
 def _find_binary(ctx, binary_name):
     binary = ctx.which(binary_name)
