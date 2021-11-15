@@ -4,16 +4,19 @@ def _success(value):
 def _error(message):
     return struct(error = message, value = None)
 
+def _unique(items):
+    result = []
+    added = {}
+    for item in items:
+        if not (item in added):
+            added[item] = True
+            result += [item]
+    return result
+
 def _split(result, delimeter = " "):
     if result.error != None:
         return result
-    l = []
-    m = {}
-    for arg in result.value.strip().split(delimeter):
-      if arg and (not arg in m):
-        m[arg] = True
-        l += [arg]
-    return _success(l)
+    return _success(_unique([arg for arg in result.value.strip().split(delimeter) if arg]))
 
 def _find_binary(ctx, binary_name):
     binary = ctx.which(binary_name)
@@ -108,21 +111,76 @@ def _symlinks(ctx, basename, srcpaths):
         result += [str(dest)[rootlen:]]
     return result
 
-def _deps(ctx, pkg_config, pkg_name):
+def _lib_dirs(ctx, pkg_config, pkg_name):
     deps = _split(_pkg_config(ctx, pkg_config, pkg_name, [
         "--libs-only-L",
     ] + _pkg_config_static(ctx)))
     if deps.error != None:
         return deps
-    deps, unused = _extract_prefix(deps.value, "-L", strip = True)
-    result = []
-    for dep in {dep: True for dep in deps}.keys():
-        base = "deps_" + dep.replace("/", "_").replace(".", "_")
-        result += _symlinks(ctx, base, [dep])
-    return _success(result)
+    result, unused = _extract_prefix(deps.value, "-L", strip = True)
+
+    lib_dir = _pkg_config(ctx, pkg_config, pkg_name, ["--variable=libdir"])
+    if lib_dir.error != None:
+        return lib_dir
+    lib_dir = lib_dir.value.strip()
+
+    if lib_dir != "":
+        result += [lib_dir]
+
+    return _success(_unique(result))
+
+def _lib_dynamic_file(ctx, lib):
+    if "mac os" in ctx.os.name:
+        return "lib{}.dylib".format(lib)
+    return "lib{}.so".format(lib)
+
+def _lib_static_file(ctx, lib):
+    return "lib{}.a".format(lib)
+
+def _deps(ctx, pkg_config, pkg_name):
+    lib_dirs = _lib_dirs(ctx, pkg_config, pkg_name)
+    if lib_dirs.error != None:
+        return lib_dirs
+    lib_dirs = lib_dirs.value
+
+    libs = _split(_pkg_config(ctx, pkg_config, pkg_name, [
+        "--libs-only-l",
+    ] + _pkg_config_static(ctx)))
+    if libs.error != None:
+        return libs
+
+    libs, unused = _extract_prefix(libs.value, "-l", strip = True)
+
+    deps = {}
+    for lib in _unique(libs):
+        found = None
+        for lib_dir in lib_dirs:
+            if ctx.attr.dynamic:
+                name = _lib_dynamic_file(ctx, lib)
+                src = ctx.path(lib_dir).get_child(name)
+                if src.exists:
+                    link = "libs/{}".format(name)
+                    ctx.symlink(src, ctx.path(link))
+                    found = {"shared": link}
+                    break
+            name = _lib_static_file(ctx, lib)
+            src = ctx.path(lib_dir).get_child(name)
+            if src.exists:
+                link = "libs/{}".format(name)
+                ctx.symlink(src, ctx.path(link))
+                found = {"static": link}
+                break
+        if found == None:
+            return _error("can't find library '{}' in paths '{}'".format(lib, lib_dirs))
+        dep = "lib{}_private".format(lib.replace("/", "_").replace(".", "_"))
+        deps[dep] = found
+    return _success(deps)
 
 def _fmt_array(array):
-    return ",".join(['"{}"'.format(a) for a in array])
+    return ", ".join(['"{}"'.format(a) for a in array])
+
+def _fmt_map(map):
+    return ", ".join(['"{}": "{}"'.format(k, map[k]) for k in map])
 
 def _fmt_glob(array):
     return _fmt_array(["{}/**/*.h".format(a) for a in array])
@@ -163,10 +221,23 @@ def _pkg_config_impl(ctx):
         return linkopts
     linkopts = _ignore_opts(linkopts.value, ignore_opts)
 
+    lib_dirs = _lib_dirs(ctx, pkg_config, pkg_name)
+    if lib_dirs.error != None:
+        return lib_dirs
+    lib_dirs = lib_dirs.value
+
     deps = _deps(ctx, pkg_config, pkg_name)
     if deps.error != None:
         return deps
     deps = deps.value
+    static_libs = {}
+    shared_libs = {}
+    for name in deps:
+        dep = deps[name]
+        if "static" in dep:
+            static_libs[name] = dep["static"]
+        if "shared" in dep:
+            shared_libs[name] = dep["shared"]
 
     include_prefix = ctx.attr.name
     if ctx.attr.include_prefix != "":
@@ -178,12 +249,14 @@ def _pkg_config_impl(ctx):
         "%{includes}": _fmt_array(includes),
         "%{copts}": _fmt_array(copts),
         "%{extra_copts}": _fmt_array(ctx.attr.copts),
-        "%{deps}": _fmt_array(deps),
         "%{extra_deps}": _fmt_array(ctx.attr.deps),
         "%{linkopts}": _fmt_array(linkopts),
         "%{extra_linkopts}": _fmt_array(ctx.attr.linkopts),
         "%{strip_include}": strip_include,
         "%{include_prefix}": include_prefix,
+        "%{deps}": _fmt_array([":" + dep for dep in deps]),
+        "%{shared_libs}": _fmt_map(shared_libs),
+        "%{static_libs}": _fmt_map(static_libs),
     }, executable = False)
 
 pkg_config = repository_rule(
@@ -199,6 +272,7 @@ pkg_config = repository_rule(
         "copts": attr.string_list(doc = "Extra copts value."),
         "ignore_opts": attr.string_list(doc = "Ignore listed opts in copts or linkopts."),
         "dynamic": attr.bool(doc = "Use dynamic linking."),
+        "system_includes": attr.string(doc = "Addidional include directories in system /usr/include directory (some pkg-config don't publish this directories)"),
     },
     local = True,
     implementation = _pkg_config_impl,
