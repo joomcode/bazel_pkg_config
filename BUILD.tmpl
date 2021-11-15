@@ -1,14 +1,17 @@
 # vi: ft=bzl
 package(default_visibility = ["//visibility:private"])
 
-_imports = [p[:len(p)-2] for p in glob(["{}/**/*.a".format(d) for d in [%{deps}]])]
+_shared_libs = {%{shared_libs}}
 [cc_import(
-    name = i.replace("/", "_"),
-    hdrs = glob([%{hdrs}]),
-    # TODO: library extension for platform.
-    static_library = "{}.a".format(i),
-    shared_library = "{}.dylib".format(i),
-) for i in _imports]
+    name = i,
+    shared_library = _shared_libs[i],
+) for i in _shared_libs]
+
+_static_libs = {%{static_libs}}
+[cc_import(
+    name = i,
+    static_library = _static_libs[i],
+) for i in _static_libs]
 
 cc_library(
     name = "internal_lib",
@@ -16,7 +19,7 @@ cc_library(
     copts = [%{copts}],
     includes = [%{includes}],
     linkopts = [%{linkopts}],
-    deps = [(":" + i.replace("/", "_")) for i in _imports],
+    deps = [%{deps}],
 )
 
 cc_library(
