@@ -130,6 +130,8 @@ def _lib_dirs(ctx, pkg_config, pkg_name):
     return _success(_unique(result))
 
 def _lib_dynamic_file(ctx, lib):
+    if "mac os" in ctx.os.name:
+        return "lib{}.dylib".format(lib)
     return "lib{}.so".format(lib)
 
 def _lib_static_file(ctx, lib):
