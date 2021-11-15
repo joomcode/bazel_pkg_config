@@ -99,12 +99,15 @@ def _ignore_opts(opts, ignore_opts):
     return remain
 
 def _symlinks(ctx, basename, srcpaths):
+    ignore_includes = ctx.attr.ignore_includes
     result = []
     root = ctx.path("")
     base = root.get_child(basename)
     rootlen = len(str(base)) - len(basename)
     for idx, src in enumerate([ctx.path(p) for p in srcpaths]):
         if not src.exists:
+            continue
+        if str(src) in ignore_includes:
             continue
         dest = "{}_{}".format(base.get_child(src.basename), idx)
         ctx.symlink(src.realpath, dest)
@@ -272,7 +275,7 @@ pkg_config = repository_rule(
         "copts": attr.string_list(doc = "Extra copts value."),
         "ignore_opts": attr.string_list(doc = "Ignore listed opts in copts or linkopts."),
         "dynamic": attr.bool(doc = "Use dynamic linking."),
-        "system_includes": attr.string(doc = "Addidional include directories in system /usr/include directory (some pkg-config don't publish this directories)"),
+        "ignore_includes": attr.string_list(doc = "Include directories exclude list."),
     },
     local = True,
     implementation = _pkg_config_impl,
